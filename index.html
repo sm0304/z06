@@ -1,0 +1,162 @@
+﻿<!DOCTYPE html>
+<html lang="mk">
+<head>
+<meta charset="UTF-8">
+<title>Записник од мерење</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    label { display: block; margin-top: 10px; }
+    textarea { width: 100%; height: 100px; }
+    #map { height: 250px; margin-top: 10px; }
+    .buttons { margin-top: 15px; }
+    .no-print { display: inline-block; margin-right: 10px; }
+    @media print {
+        .no-print { display: none !important; }
+    }
+    .image-preview { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .image-container { position: relative; width: 48%; }
+    .image-container img { width: 100%; height: auto; }
+    .delete-btn {
+        position: absolute; top: 5px; right: 5px;
+        background: red; color: white; border: none;
+        padding: 2px 6px; cursor: pointer; font-size: 12px;
+    }
+</style>
+</head>
+<body>
+
+<h2>Записник од мерење</h2>
+
+<label>Датум:
+    <input type="date" id="date">
+</label>
+
+<label>Име:
+    <input type="text" id="name">
+</label>
+
+<label>Опис:
+    <textarea id="description"></textarea>
+</label>
+
+<label>Локација:</label>
+<div id="map"></div>
+<p>Координати: <span id="coords">Се вчитува...</span></p>
+
+<label>Фотографии:</label>
+<input type="file" id="photo" accept="image/*" capture="environment" class="no-print">
+<input type="file" id="photo-gallery" accept="image/*" multiple class="no-print">
+
+<div class="image-preview" id="imagePreview"></div>
+
+<label>Лице кое го креирало записникот:
+    <input type="text" id="creator">
+</label>
+
+<div class="buttons no-print">
+    <button onclick="refreshLocation()">Освежи локација</button>
+    <button onclick="generatePDF()">Сними во PDF</button>
+    <button onclick="window.print()">Печати</button>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+let map, marker;
+let images = [];
+
+function initMap(lat, lon) {
+    map = L.map('map').setView([lat, lon], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+    marker = L.marker([lat, lon]).addTo(map);
+    document.getElementById('coords').innerText = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+}
+
+function refreshLocation() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            if (!map) {
+                initMap(lat, lon);
+            } else {
+                map.setView([lat, lon], 15);
+                marker.setLatLng([lat, lon]);
+                document.getElementById('coords').innerText = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+            }
+        }, () => {
+            fetch("https://ipapi.co/json/")
+                .then(res => res.json())
+                .then(data => initMap(data.latitude, data.longitude));
+        });
+    }
+}
+
+function addImage(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const container = document.createElement('div');
+        container.className = 'image-container';
+        const img = document.createElement('img');
+        img.src = e.target.result;
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'X';
+        delBtn.className = 'delete-btn';
+        delBtn.onclick = () => {
+            images = images.filter(i => i !== e.target.result);
+            container.remove();
+        };
+        container.appendChild(img);
+        container.appendChild(delBtn);
+        document.getElementById('imagePreview').appendChild(container);
+        images.push(e.target.result);
+    };
+    reader.readAsDataURL(file);
+}
+
+document.getElementById('photo').addEventListener('change', function() {
+    if (this.files.length > 0) addImage(this.files[0]);
+});
+
+document.getElementById('photo-gallery').addEventListener('change', function() {
+    for (let file of this.files) {
+        addImage(file);
+    }
+});
+
+async function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+
+    const date = document.getElementById('date').value || new Date().toISOString().split('T')[0];
+    const name = document.getElementById('name').value;
+    const description = document.getElementById('description').value;
+    const coords = document.getElementById('coords').innerText;
+    const creator = document.getElementById('creator').value;
+    const timestamp = new Date().toLocaleTimeString().replace(/:/g, '-');
+
+    pdf.text(`Датум: ${date}`, 10, 10);
+    pdf.text(`Име: ${name}`, 10, 20);
+    pdf.text(`Опис: ${description}`, 10, 30);
+    pdf.text(`Локација: ${coords}`, 10, 40);
+    pdf.text(`Креатор: ${creator}`, 10, 50);
+
+    let y = 60;
+    for (let img of images) {
+        pdf.addImage(img, 'JPEG', 10, y, 90, 60);
+        y += 65;
+    }
+
+    pdf.save(`Записник_${date}_${timestamp}.pdf`);
+}
+
+refreshLocation();
+</script>
+
+</body>
+</html>
